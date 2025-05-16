@@ -1,0 +1,31 @@
+# Conda environment configuration for PDW_recog_transformer project
+# To create the environment: conda env create -f environment.yml
+# To activate the environment: conda activate pdw_transformer
+
+name: pdw_transformer
+channels:
+  - pytorch       # Channel for PyTorch specific builds
+  - nvidia        # Channel for CUDA related packages if needed directly
+  - conda-forge   # A primary channel for many packages
+  - defaults      # Default conda channel
+dependencies:
+  - python=3.9        # Specify Python version
+  - pip             # Required for installing packages via pip if needed
+  # --- Core ML & Numerics ---
+  - pytorch::pytorch>=1.10.0 # PyTorch (>=1.10 recommended for newer features)
+  - pytorch::torchvision     # Often useful alongside PyTorch
+  - pytorch::torchaudio      # Might be useful for signal processing tasks
+  - pytorch::pytorch-cuda=11.8 # Specify CUDA version compatibility (ADJUST THIS based on your system's CUDA toolkit version)
+  - numpy>=1.20.0        # Fundamental package for numerical computing
+  - scikit-learn>=1.0    # For data splitting and potentially some metrics
+  # --- Data Handling ---
+  - h5py>=3.6.0          # For reading the HDF5 (.h5) dataset files
+  # --- Plotting & Visualization ---
+  - matplotlib>=3.4.0    # For plotting graphs (like in radcharRM.md)
+  # --- Utilities ---
+  - tqdm                 # Progress bars for loops (training/evaluation)
+  - pyyaml>=5.4          # For parsing YAML configuration files
+  # --- Optional: Add later if needed ---
+  # - pandas             # For data manipulation if needed beyond numpy
+  - tensorboard        # For logging and visualizing training
+  # - jupyterlab         # If using notebooks for exploration 

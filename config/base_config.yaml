@@ -1,0 +1,79 @@
+# Base configuration for the Multi-Task Learning Radar Signal Characterisation project
+# Corresponds to settings described in the paper (arXiv:2306.13105v2) Section 3.1
+
+data:
+  # Path to the HDF5 dataset file relative to the project root
+  # Assumes the standard RadChar dataset name used in the paper
+  path: "data/RadChar-Tiny.h5" # Set to RadChar-Tiny for initial testing
+  # Split ratios for train, validation, and test sets (must sum to 1.0)
+  train_split: 0.70
+  val_split: 0.15
+  test_split: 0.15
+  # Number of workers for DataLoader. 0 means data loading happens in the main process.
+  # Increase for parallel loading if I/O is a bottleneck, depends on system.
+  num_workers: 0 # Adjust based on your system
+  # Random seed for splitting data to ensure reproducibility
+  seed: 42
+
+model:
+  # Default model architecture to use if not specified via command line
+  
+  # Options: CNN1D, CNN2D, IQST-S, IQST-L
+  name: "IQST-S" # Starting with IQST-S as requested
+  # Number of output classes for the classification task
+  num_classes: 5
+  # Parameters specific to IQST variants (can be overridden)
+  iqst:
+    embedding_dim: 768
+    num_patches: 8
+    # patch_size is calculated: (2 * 512) // num_patches
+    # Parameters for IQST-S (Standard)
+    s_encoder_layers: 3
+    s_attention_heads: 3
+    # Parameters for IQST-L (Large)
+    l_encoder_layers: 6
+    l_attention_heads: 9
+  # Parameters specific to Task Heads
+  task_head:
+    num_filters: 32 # Example value, paper isn't specific, says "driven by backbone output"
+  # Input format expected by the model backbone
+  # CNN1D, IQST-S, IQST-L expect '2x512'
+  # CNN2D expects '1x32x32' (reshaped from 2x512 by data loader)
+  input_format: "2x512" # Default, adjust if model changes e.g. to CNN2D
+
+training:
+  # Total number of training epochs
+  epochs: 2 # Set to a small number for initial testing
+  # Batch size for training and evaluation
+  batch_size: 64
+  # Optimizer settings
+  optimizer:
+    type: "Adam" # As specified in the paper
+    learning_rate: 0.0005 # 5e-4 as specified in the paper
+    # Adam specific parameters (betas, eps, weight_decay) can be added here if needed
+    # betas: [0.9, 0.999]
+    # eps: 1.0e-08
+    # weight_decay: 0
+  # Loss function weights (Section 3.3)
+  loss_weights:
+    classification: 0.1
+    regression_np: 0.225 # Weight for Number of Pulses loss
+    regression_pw: 0.225 # Weight for Pulse Width loss
+    regression_pri: 0.225 # Weight for Pulse Repetition Interval loss
+    regression_td: 0.225 # Weight for Time Delay loss
+  # Device to use ('cuda' or 'cpu') - can be overridden by command line
+  device: "cuda"
+  # Checkpoint saving frequency (e.g., save every N epochs, or only best)
+  save_checkpoint_freq: 1
+  save_best_checkpoint: True
+
+evaluation:
+  # Batch size can be the same or different from training
+  batch_size: 64 # Can be larger if memory allows, as no gradients are computed
+  # Specific SNRs to report results for, as in Table 1 of the paper
+  report_snrs: [-10, 0, 10]
+
+logging:
+  # Directory to save TensorBoard logs and potentially other outputs (relative to project root)
+  # Can be overridden by --output_dir in main.py
+  log_dir: "runs" 
