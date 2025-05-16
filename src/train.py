@@ -397,7 +397,7 @@ def train_model(config: dict, device: torch.device):
                  writer.add_scalar(f'MAE_denorm/val/{key.replace("mae_denorm_", "")}', value, epoch)
             else: # These are the normalized losses
                 writer.add_scalar(f'Loss/val/{key}', value, epoch)
-        
+                
         epoch_duration = time.time() - epoch_start_time
         logger.info(f"Epoch {epoch} completed in {epoch_duration:.2f} seconds.")
 

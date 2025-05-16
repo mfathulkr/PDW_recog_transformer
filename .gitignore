@@ -168,4 +168,7 @@ saved_models/
 
 # Tensorboard logs
 runs/
-tensorboard_logs/ 
+tensorboard_logs/
+
+# Cursor settings
+.cursor/
