@@ -1,5 +1,5 @@
 # Base configuration for the Multi-Task Learning Radar Signal Characterisation project
-# Corresponds to settings described in the paper (arXiv:2306.13105v2) Section 3.1
+# Corresponds to settings described in the paper (arXiv:2306.13105v2) Section 3
 
 data:
   # Path to the HDF5 dataset file relative to the project root
@@ -17,22 +17,29 @@ data:
 
 model:
   # Default model architecture to use if not specified via command line
-  
   # Options: CNN1D, CNN2D, IQST-S, IQST-L
-  name: "IQST-S" # Starting with IQST-S as requested
+  name: "IQST-L" # Using IQST-L as per user request and paper's comparison
   # Number of output classes for the classification task
   num_classes: 5
   # Parameters specific to IQST variants (can be overridden)
   iqst:
     embedding_dim: 768
     num_patches: 8
-    # patch_size is calculated: (2 * 512) // num_patches
+    # patch_size is implicitly defined by num_patches and input dimensions (2*512 / 8 = 128 elements per patch)
+    # These elements are then projected to embedding_dim.
+    # The model implementation will handle the patch creation and projection.
+
     # Parameters for IQST-S (Standard)
-    s_encoder_layers: 3
-    s_attention_heads: 3
+    s_encoder_layers: 3 # Number of Transformer encoder layers (matches paper: 3 encoder layers)
+    s_num_mha_heads: 12 # Number of heads WITHIN each Multi-Head Attention block (common value for 768 dim, paper doesn't specify)
+    
     # Parameters for IQST-L (Large)
-    l_encoder_layers: 6
-    l_attention_heads: 9
+    # Paper: "IQST-L, which uses 9 multi-head attention blocks and 6 encoder layers"
+    # Interpreting as 6 standard encoder layers, each containing one MHA block.
+    # The "9 multi-head attention blocks" might refer to a non-standard configuration or a typo.
+    # For a standard Transformer, 6 encoder layers would typically mean 6 MHA blocks.
+    l_encoder_layers: 6 # Number of Transformer encoder layers (matches paper: 6 encoder layers)
+    l_num_mha_heads: 12 # Number of heads WITHIN each Multi-Head Attention block (common value for 768 dim, paper doesn't specify for L)
   # Parameters specific to Task Heads
   task_head:
     num_filters: 32 # Example value, paper isn't specific, says "driven by backbone output"
@@ -43,7 +50,7 @@ model:
 
 training:
   # Total number of training epochs
-  epochs: 2 # Set to a small number for initial testing
+  epochs: 100 # As specified in paper (Section 3.1)
   # Batch size for training and evaluation
   batch_size: 64
   # Optimizer settings
