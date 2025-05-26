@@ -65,7 +65,8 @@ class MTLModel(nn.Module):
                 embedding_dim=iqst_params.get('embedding_dim', 768), # Provide defaults
                 num_patches=iqst_params.get('num_patches', 8),
                 l_encoder_layers=iqst_params.get('l_encoder_layers', 6),
-                l_attention_heads=iqst_params.get('l_attention_heads', 9)
+                # Correctly get 'l_num_mha_heads' from config, fall back to 9 if not present
+                l_attention_heads=iqst_params.get('l_num_mha_heads', iqst_params.get('l_attention_heads', 9))
                 # S params are not needed here
             )
         else:
