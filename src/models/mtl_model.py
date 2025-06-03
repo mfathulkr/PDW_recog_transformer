@@ -66,38 +66,52 @@ class MTLModel(nn.Module):
                 num_patches=iqst_params.get('num_patches', 8),
                 l_encoder_layers=iqst_params.get('l_encoder_layers', 6),
                 # Correctly get 'l_num_mha_heads' from config, fall back to 9 if not present
-                l_attention_heads=iqst_params.get('l_num_mha_heads', iqst_params.get('l_attention_heads', 9))
+                l_attention_heads=iqst_params.get('l_num_mha_heads', iqst_params.get('l_attention_heads', 12)) # Defaulted to 12 from config
                 # S params are not needed here
             )
         else:
             raise ValueError(f"Unknown backbone name in config: {self.model_name}")
 
+        # --- Optional: Projection layer for IQST to match paper's 128-dim head input ---
+        self.projection_to_128_dim = None
+        if self.model_name in ['IQST-S', 'IQST-L']:
+            backbone_output_actual_dim = self.backbone.output_channels # Should be 768
+            if backbone_output_actual_dim == 768: # Only add projection if backbone outputs 768
+                self.projection_to_128_dim = nn.Linear(backbone_output_actual_dim, 128)
+                logger.info(f"Added projection layer for {self.model_name} from {backbone_output_actual_dim} to 128 dimensions for task heads.")
+                backbone_output_channels_for_heads = 128
+                backbone_output_length_for_heads = 1 # Length remains 1 after projection and reshape
+            else: # If IQST output is not 768 for some reason, use its direct output dim
+                logger.warning(f"{self.model_name} output channels ({backbone_output_actual_dim}) not 768. Using direct output for heads.")
+                backbone_output_channels_for_heads = backbone_output_actual_dim
+                backbone_output_length_for_heads = self.backbone.output_length
+            self.needs_flattening = False # IQST output is already (B,C,L)-like after backbone
         # --- Determine Input Shape for Heads --- #
         # Heads expect (B, C, L) input for Conv1d
-        if self.model_name == 'CNN2D':
+        elif self.model_name == 'CNN2D':
             # Output is (B, C, H, W) -> Flatten C*H*W -> Add Length dim L=1
-            backbone_output_channels = self.backbone.output_channels * self.backbone.output_h * self.backbone.output_w
-            backbone_output_length = 1 # Treat flattened features as having length 1
+            backbone_output_channels_for_heads = self.backbone.output_channels * self.backbone.output_h * self.backbone.output_w
+            backbone_output_length_for_heads = 1 # Treat flattened features as having length 1
             self.needs_flattening = True # Flag to flatten CNN2D output in forward pass
         else: # CNN1D, IQST-S, IQST-L
             # Output is already (B, C, L) or reshaped to it in backbone's forward
-            backbone_output_channels = self.backbone.output_channels
-            backbone_output_length = self.backbone.output_length
+            backbone_output_channels_for_heads = self.backbone.output_channels
+            backbone_output_length_for_heads = self.backbone.output_length
             self.needs_flattening = False
 
-        logger.info(f"Backbone output shape for heads (Channels, Length): ({backbone_output_channels}, {backbone_output_length})")
+        logger.info(f"Input for Task Heads (Channels, Length): ({backbone_output_channels_for_heads}, {backbone_output_length_for_heads})")
 
         # --- Instantiate Task Heads --- #
-        head_input_channels = backbone_output_channels
+        head_input_channels = backbone_output_channels_for_heads
 
         # Regression Heads (output_dim=1)
-        self.head_np = TaskHead(head_input_channels, backbone_output_length, self.task_head_filters, 1, is_classification=False)
-        self.head_pw = TaskHead(head_input_channels, backbone_output_length, self.task_head_filters, 1, is_classification=False)
-        self.head_pri = TaskHead(head_input_channels, backbone_output_length, self.task_head_filters, 1, is_classification=False)
-        self.head_td = TaskHead(head_input_channels, backbone_output_length, self.task_head_filters, 1, is_classification=False)
+        self.head_np = TaskHead(head_input_channels, backbone_output_length_for_heads, self.task_head_filters, 1, is_classification=False)
+        self.head_pw = TaskHead(head_input_channels, backbone_output_length_for_heads, self.task_head_filters, 1, is_classification=False)
+        self.head_pri = TaskHead(head_input_channels, backbone_output_length_for_heads, self.task_head_filters, 1, is_classification=False)
+        self.head_td = TaskHead(head_input_channels, backbone_output_length_for_heads, self.task_head_filters, 1, is_classification=False)
 
         # Classification Head (output_dim = num_classes)
-        self.head_class = TaskHead(head_input_channels, backbone_output_length, self.task_head_filters, self.num_classes, is_classification=True)
+        self.head_class = TaskHead(head_input_channels, backbone_output_length_for_heads, self.task_head_filters, self.num_classes, is_classification=True)
 
         # --- Initialize Weights --- #
         # Apply LeCun initialization as specified in paper (Section 3.1)
@@ -160,23 +174,31 @@ class MTLModel(nn.Module):
         # --- Pass through Backbone --- #
         features = self.backbone(x) # CNN1D/IQST output (B, C, L), CNN2D output (B, C, H, W)
 
+        # --- Apply projection if defined (for IQST models) ---
+        if self.projection_to_128_dim is not None and self.model_name in ['IQST-S', 'IQST-L']:
+            # features from IQST backbone are (B, 768, 1)
+            squeezed_features = features.squeeze(-1) # (B, 768)
+            projected_features = self.projection_to_128_dim(squeezed_features) # (B, 128)
+            features_for_heads = projected_features.unsqueeze(-1) # (B, 128, 1)
         # --- Flatten features if needed (for CNN2D before heads) --- #
-        if self.needs_flattening:
+        elif self.needs_flattening:
             # Input features are (B, C, H, W)
             # Flatten C, H, W dims, keep Batch dim
-            features = features.view(features.size(0), -1) # (B, C*H*W)
+            features_for_heads = features.view(features.size(0), -1) # (B, C*H*W)
             # Add a dummy Length dimension for Conv1d heads: (B, C*H*W, 1)
-            features = features.unsqueeze(-1)
-            # features now shape (B, backbone_output_channels, 1) where backbone_output_channels=C*H*W
+            features_for_heads = features_for_heads.unsqueeze(-1)
+            # features_for_heads now shape (B, backbone_output_channels_for_heads, 1)
+        else: # For CNN1D or IQST if projection wasn't applied
+            features_for_heads = features
 
         # --- Pass features through Task Heads --- #
         # Heads expect input shape (B, Channels, Length)
-        # features shape: (B, head_input_channels, backbone_output_length)
-        output_class = self.head_class(features) # Output (B, num_classes)
-        output_np = self.head_np(features)       # Output (B, 1)
-        output_pw = self.head_pw(features)       # Output (B, 1)
-        output_pri = self.head_pri(features)     # Output (B, 1)
-        output_td = self.head_td(features)       # Output (B, 1)
+        # features_for_heads shape: (B, head_input_channels, backbone_output_length_for_heads)
+        output_class = self.head_class(features_for_heads) # Output (B, num_classes)
+        output_np = self.head_np(features_for_heads)       # Output (B, 1)
+        output_pw = self.head_pw(features_for_heads)       # Output (B, 1)
+        output_pri = self.head_pri(features_for_heads)     # Output (B, 1)
+        output_td = self.head_td(features_for_heads)       # Output (B, 1)
 
         # Return dictionary of outputs (remove trailing dim from regression outputs)
         return {
