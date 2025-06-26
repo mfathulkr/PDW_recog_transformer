@@ -256,15 +256,12 @@ def evaluate_model(config: dict, model: nn.Module, test_loader: DataLoader, devi
             targs = final_targets[task]
 
             # De-normalize using provided statistics
-            if task in dataset_stats['mean'] and task in dataset_stats['std']:
-                mean = dataset_stats['mean'][task]
-                std = dataset_stats['std'][task]
-                # Ensure stats are floats, not tensors/arrays, for denormalize function
-                if isinstance(mean, (np.ndarray, torch.Tensor)): mean = mean.item()
-                if isinstance(std, (np.ndarray, torch.Tensor)): std = std.item()
+            if 'label_min_max' in dataset_stats and task in dataset_stats['label_min_max']:
+                min_val = dataset_stats['label_min_max'][task]['min']
+                max_val = dataset_stats['label_min_max'][task]['max']
 
-                preds_denorm = denormalize(preds, mean, std)
-                targs_denorm = denormalize(targs, mean, std)
+                preds_denorm = denormalize(preds, min_val, max_val)
+                targs_denorm = denormalize(targs, min_val, max_val)
 
                 mae_denorm = calculate_mae(preds_denorm, targs_denorm)
                 results[f'{task}_mae_denormalized'] = mae_denorm
@@ -333,25 +330,23 @@ def evaluate_model(config: dict, model: nn.Module, test_loader: DataLoader, devi
                     preds_snr = snr_preds[task]
                     targs_snr = snr_targets[task]
                     # Need dataset_stats for denormalization
-                    if task in dataset_stats['mean'] and task in dataset_stats['std']:
-                         mean = dataset_stats['mean'][task]
-                         std = dataset_stats['std'][task]
-                         if isinstance(mean, (np.ndarray, torch.Tensor)): mean = mean.item()
-                         if isinstance(std, (np.ndarray, torch.Tensor)): std = std.item()
+                    if 'label_min_max' in dataset_stats and task in dataset_stats['label_min_max']:
+                         min_val = dataset_stats['label_min_max'][task]['min']
+                         max_val = dataset_stats['label_min_max'][task]['max']
 
-                         preds_denorm_snr = denormalize(preds_snr, mean, std)
-                         targs_denorm_snr = denormalize(targs_snr, mean, std)
+                         preds_denorm_snr = denormalize(preds_snr, min_val, max_val)
+                         targs_denorm_snr = denormalize(targs_snr, min_val, max_val)
                          mae_denorm_snr = calculate_mae(preds_denorm_snr, targs_denorm_snr)
                          snr_metric_results[snr_key][f'{task}_mae_denormalized'] = mae_denorm_snr
                          logger.info(f"  Regression MAE ({task}, De-normalized): {mae_denorm_snr:.4f}")
                     else:
-                        logger.warning(f"Normalization stats for task '{task}' not found. Cannot calculate de-normalized MAE for SNR {snr}.")
-                        # Calculate normalized MAE as fallback
+                        logger.warning(f"Normalization stats for task '{task}' not found for SNR {snr}. Cannot calculate de-normalized MAE.")
+                        # Calculate MAE on normalized values as a fallback
                         mae_norm_snr = calculate_mae(preds_snr, targs_snr)
                         snr_metric_results[snr_key][f'{task}_mae_normalized'] = mae_norm_snr
                         logger.info(f"  Regression MAE ({task}, Normalized): {mae_norm_snr:.4f}")
                  else:
-                     logger.warning(f"Regression results for task '{task}' not available for SNR {snr}.")
+                     logger.warning(f"Results for regression task '{task}' not available for SNR {snr}.")
 
         # Add per-SNR results to the main results dict
         results['per_snr_metrics'] = snr_metric_results
